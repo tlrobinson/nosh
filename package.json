@@ -1,0 +1,13 @@
+{
+  "name": "nosh",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {
+    "prettier": "^1.17.0"
+  },
+  "bin": {
+    "nosh": "./bin/nosh"
+  }
+}
