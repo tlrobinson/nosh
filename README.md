@@ -49,6 +49,13 @@ You can instead call `.code()` to not reject, but instead return a promise that 
     > sh("-c", "false").code()
     1
 
+You can pass processes directly as arguments to other processes:
+
+    > echo(echo("hello world"))
+    hello world
+
+This is effectively the same as `echo(await echo("hello world").string())`.
+
 ### TODO
 
 - Observables?
