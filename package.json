@@ -5,6 +5,7 @@
   "license": "MIT",
   "dependencies": {},
   "devDependencies": {
+    "nodemon": "^1.18.11",
     "prettier": "^1.17.0"
   },
   "bin": {
