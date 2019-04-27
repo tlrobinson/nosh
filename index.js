@@ -7,30 +7,53 @@ const path = require("path");
 const readline = require("readline");
 const vm = require("vm");
 
-const { PassThrough } = require("stream");
+const { Stream, PassThrough, Readable, Writable } = require("stream");
 
 const paths = process.env.PATH.split(":");
 
 class Process {
   constructor(executablePath, args) {
-    // we need these passthrough streams because the actual process may not start until all the arguments are resolved
-    this.stdin = new PassThrough({ allowHalfOpen: false });
-    this.stdout = new PassThrough({ allowHalfOpen: false });
-    this.stderr = new PassThrough({ allowHalfOpen: false });
+    // we need these streams because the actual process may not start until all the arguments are resolved
+    const stdin = AsymmetricalStreamPair({ allowHalfOpen: false });
+    const stdout = AsymmetricalStreamPair({ allowHalfOpen: false });
+    const stderr = AsymmetricalStreamPair({ allowHalfOpen: false });
+
+    this.stdin = stdin.writable;
+    this.stdout = stdout.readable;
+    this.stderr = stderr.readable;
 
     this.promise = new Promise(async (resolve, reject) => {
+      const streams = [stdin.readable, stdout.writable, stderr.writable];
+
       // resolve the arguments if needed
       const finalArgs = await Promise.all(
-        args.map(arg => (arg instanceof Process ? arg.string() : arg))
+        args.map(arg => {
+          if (arg instanceof Process) {
+            return arg.string();
+          } else if (arg instanceof Stream) {
+            streams.push(arg);
+            return `/dev/fd/${streams.length - 1}`;
+          } else {
+            return arg;
+          }
+        })
       );
 
       // start the process
-      const proc = child_process.spawn(executablePath, finalArgs);
+      const proc = child_process.spawn(executablePath, finalArgs, {
+        stdio: streams.map(s => "pipe")
+      });
 
-      // pipe to/from the passthrough streams
-      this.stdin.pipe(proc.stdin);
-      proc.stdout.pipe(this.stdout);
-      proc.stderr.pipe(this.stderr);
+      // pipe to/from the streams
+      for (const [fd, stream] of streams.entries()) {
+        // TODO: better way of detecting readable/writable
+        if (stream instanceof Readable) {
+          stream.pipe(proc.stdio[fd]);
+        }
+        if (stream instanceof Writable) {
+          proc.stdio[fd].pipe(stream);
+        }
+      }
 
       // wait for the process to exit and resolve or reject
       proc.on("close", code => {
@@ -67,6 +90,39 @@ class Process {
   code() {
     return this.promise.then(code => 0, code => code);
   }
+}
+
+// TODO: backpressure
+function AsymmetricalStreamPair(options = {}) {
+  let readableCallback;
+
+  const readable = new Readable(options);
+  readable._read = function _read() {
+    if (!readableCallback) {
+      return;
+    }
+    let callback = readableCallback;
+    readableCallback = null;
+    callback();
+  };
+
+  const writable = new Writable(options);
+  writable._write = function _write(chunk, enc, callback) {
+    if (readableCallback) {
+      throw new Error();
+    }
+    if (typeof callback === "function") {
+      readableCallback = callback;
+    }
+    readable.push(chunk);
+  };
+
+  writable._final = function _final(callback) {
+    readable.on("end", callback);
+    readable.push(null);
+  };
+
+  return { readable, writable };
 }
 
 function findExecutableOnPath(command) {
@@ -127,6 +183,9 @@ exports.main = function(args) {
 
   // replace `context` with version with the "bin proxy" version
   r.context = vm.createContext(binProxy(global));
+
+  r.context.require = require;
+  r.context.module = module;
 
   // wrap `eval` with our own logic
   const _eval = r.eval;

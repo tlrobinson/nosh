@@ -34,7 +34,7 @@ You can call `.lines()` to get a promise that resolves to an array of lines:
     > ls().lines()
     [ 'README.md', 'bin', 'node_modules', 'package.json', 'yarn.lock' ]
 
-Or `.string()` to get a single string:
+Or `.string()` to get the output as a single string:
 
     > ls().string()
     'README.md\nbin\nnode_modules\npackage.json\nyarn.lock'
@@ -49,12 +49,23 @@ You can instead call `.code()` to not reject, but instead return a promise that 
     > sh("-c", "false").code()
     1
 
-You can pass processes directly as arguments to other processes:
+"Command substitution" works, so you can pass any command as an argument to another command:
 
     > echo(echo("hello world"))
     hello world
 
-This is effectively the same as `echo(await echo("hello world").string())`.
+(This is equivalent to `echo(await echo("hello world").string())`)
+
+"Process substition" also works, so you can pass the output of a command as a file to another command:
+
+    > cat(echo("hello world").stdout)
+    hello world
+    > echo(echo("hello").stdout)
+    /dev/fd/3
+
+In fact, any Stream works:
+
+    > cat(require("net").connect(23, towel.blinkenlights.nl))
 
 ### TODO
 
