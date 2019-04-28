@@ -14,7 +14,12 @@ const HISTORY_PATH = ".noshhistory";
 
 const paths = process.env.PATH.split(":");
 
-global.cd = async path => process.chdir(path);
+const NOSH = Symbol("NOSH");
+
+global.cd = async (path = "~") => {
+  process.chdir(path.replace(/^~/, process.env["HOME"]));
+};
+global.cd[NOSH] = true;
 
 class Process {
   constructor(executablePath, args) {
@@ -74,9 +79,12 @@ class Process {
 
       // automatically pipe stdin/stdout/stderr if they haven't already
       process.nextTick(() => {
-        if (!piped) {
+        if (!piped && !process.stdin.isTTY) {
           process.stdin.pipe(this.stdin);
-          // FIXME: unpipe?
+          proc.on("close", () => {
+            // FIXME: sometimes doesn't exit process until next newline
+            process.stdin.unpipe(this.stdin);
+          });
         }
         if (this.stdout._readableState.paused) {
           this.stdout.pipe(process.stdout);
@@ -178,20 +186,24 @@ function isExecutable(path) {
 }
 
 function functionForExecutable(executablePath, prevProc) {
-  return function(...args) {
+  const command = function(...args) {
     const proc = new Process(executablePath, args, prevProc);
     if (prevProc) {
       prevProc.stdout.pipe(proc.stdin);
     }
     return proc;
   };
+  command[NOSH] = true;
+  return command;
 }
 
 // returns a Proxy for `object` that will return functions for executables on your PATH
 function binProxy(object, prevProc) {
   return new Proxy(object, {
     has(target, prop, receiver) {
-      return prop in target || !!findExecutableOnPath(prop);
+      const x = prop in target || !!findExecutableOnPath(prop);
+      console.log(prop, x);
+      return x;
     },
     get(target, prop, receiver) {
       if (prop in target || typeof prop !== "string") {
@@ -222,20 +234,25 @@ function runRepl() {
   // wrap `eval` with our own logic
   const _eval = r.eval;
   r.eval = function(cmd, context, filename, callback) {
-    _eval(cmd, context, filename, function(err, result) {
+    _eval(cmd, context, filename, async function(err, result) {
       if (err) {
         callback(err);
       } else {
+        // auto-run Nosh commands with no arguments
+        if (typeof result === "function" && result[NOSH]) {
+          result = result();
+        }
         if (result && typeof result.then === "function") {
-          Promise.resolve(result)
-            .then(finalResult => {
-              if (finalResult === undefined) {
-                callback();
-              } else {
-                callback(null, finalResult);
-              }
-            })
-            .catch(finalError => callback(finalError));
+          try {
+            const finalResult = await result;
+            if (finalResult === undefined) {
+              callback();
+            } else {
+              callback(null, finalResult);
+            }
+          } catch (finalError) {
+            callback(finalError);
+          }
         } else {
           return callback(null, result);
         }
@@ -258,6 +275,8 @@ function runScript(file) {
 exports.main = function(args) {
   if (args.length > 2) {
     runScript(args[2]);
+  } else if (!process.stdin.isTTY) {
+    runScript("/dev/stdin");
   } else {
     runRepl();
   }
@@ -266,3 +285,17 @@ exports.main = function(args) {
 if (require.main === module) {
   exports.main(process.argv);
 }
+
+// process.on("beforeExit", () =>
+//   console.log(process._getActiveHandles().map(streamName))
+// );
+
+// function streamName(s) {
+//   return s === process.stdin
+//     ? "stdin"
+//     : s === process.stdout
+//     ? "stdout"
+//     : s === process.stderr
+//     ? "stderr"
+//     : s.constructor && s.constructor.name;
+// }

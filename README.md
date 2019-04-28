@@ -54,7 +54,7 @@ You can instead call `.code()` to not reject, but instead return a promise that 
     > echo(echo("hello world"))
     hello world
 
-(This is equivalent to `echo(await echo("hello world").string())`)
+(This is equivalent to `echo(await echo("hello world").string())`, or `echo $(echo "hello world")` in most shells)
 
 "Process substition" also works, so you can pass the output of a command as a file to another command:
 
@@ -63,7 +63,9 @@ You can instead call `.code()` to not reject, but instead return a promise that 
     > echo(echo("hello").stdout)
     /dev/fd/3
 
-In fact, any Stream works:
+(This is equivalent to `cat <(echo "hello world")` in most shells)
+
+In fact, this works with any Stream, not just `stdout` of sub-processes:
 
     > cat(require("net").connect(23, towel.blinkenlights.nl))
 
