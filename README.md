@@ -78,11 +78,9 @@ In fact, this works with any Stream, not just `stdout` of sub-processes:
 ### TODO
 
 - Observables?
-- Support "set -e", "set -o pipefail", and various other shell behaviors
-- Support `await`
-- Support expressions other than statements
-- Inject the Proxy in the context using something besides `with() { }`?
+- Support `set -e`, `set -o pipefail`, and various other shell behaviors
+- Support top-level `await`
 - Support various other helper methods on `Process`.
-- Alternative syntaxes (`sh``echo hello```)
+- Alternative syntaxes (``sh`echo hello```)
 - History (currently only works on Node 11)
 - Pick a name that's available in NPM
