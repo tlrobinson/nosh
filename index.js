@@ -6,10 +6,15 @@ const child_process = require("child_process");
 const path = require("path");
 const readline = require("readline");
 const vm = require("vm");
+const requireLike = require("require-like");
 
 const { Stream, PassThrough, Readable, Writable } = require("stream");
 
+const HISTORY_PATH = ".noshhistory";
+
 const paths = process.env.PATH.split(":");
+
+global.cd = async path => process.chdir(path);
 
 class Process {
   constructor(executablePath, args) {
@@ -21,6 +26,9 @@ class Process {
     this.stdin = stdin.writable;
     this.stdout = stdout.readable;
     this.stderr = stderr.readable;
+
+    let piped = false;
+    this.stdin.on("pipe", () => (piped = true));
 
     this.promise = new Promise(async (resolve, reject) => {
       const streams = [stdin.readable, stdout.writable, stderr.writable];
@@ -63,6 +71,26 @@ class Process {
           reject(code);
         }
       });
+
+      // automatically pipe stdin/stdout/stderr if they haven't already
+      process.nextTick(() => {
+        if (!piped) {
+          process.stdin.pipe(this.stdin);
+          // FIXME: unpipe?
+        }
+        if (this.stdout._readableState.paused) {
+          this.stdout.pipe(process.stdout);
+          proc.on("close", () => {
+            this.stdout.unpipe(process.stdout);
+          });
+        }
+        if (this.stderr._readableState.paused) {
+          this.stderr.pipe(process.stderr);
+          proc.on("close", () => {
+            this.stderr.unpipe(process.stderr);
+          });
+        }
+      });
     });
 
     // set up the bin proxy
@@ -92,7 +120,7 @@ class Process {
   }
 }
 
-// TODO: backpressure
+// TODO: backpressure?
 function AsymmetricalStreamPair(options = {}) {
   let readableCallback;
 
@@ -178,8 +206,12 @@ function binProxy(object, prevProc) {
   });
 }
 
-exports.main = function(args) {
+function runRepl() {
   const r = repl.start({ propt: "> " });
+
+  if (r.historyPath && HISTORY_PATH) {
+    r.historyPath(HISTORY_PATH);
+  }
 
   // replace `context` with version with the "bin proxy" version
   r.context = vm.createContext(binProxy(global));
@@ -190,18 +222,12 @@ exports.main = function(args) {
   // wrap `eval` with our own logic
   const _eval = r.eval;
   r.eval = function(cmd, context, filename, callback) {
-    _eval(cmd, context, filename, function(err, r) {
+    _eval(cmd, context, filename, function(err, result) {
       if (err) {
         callback(err);
       } else {
-        if (r && r.stdout && typeof r.stdout.pipe === "function") {
-          r.stdout.pipe(process.stdout);
-        }
-        if (r && r.stderr && typeof r.stderr.pipe === "function") {
-          r.stderr.pipe(process.stderr);
-        }
-        if (r && typeof r.then === "function") {
-          Promise.resolve(r)
+        if (result && typeof result.then === "function") {
+          Promise.resolve(result)
             .then(finalResult => {
               if (finalResult === undefined) {
                 callback();
@@ -211,11 +237,30 @@ exports.main = function(args) {
             })
             .catch(finalError => callback(finalError));
         } else {
-          return callback(null, r);
+          return callback(null, result);
         }
       }
     });
   };
+}
+
+function runScript(file) {
+  const context = vm.createContext(binProxy(global));
+
+  context.require = requireLike(file);
+  context.module = module;
+
+  const code = fs.readFileSync(file, "utf-8");
+
+  vm.runInContext(code, context);
+}
+
+exports.main = function(args) {
+  if (args.length > 2) {
+    runScript(args[2]);
+  } else {
+    runRepl();
+  }
 };
 
 if (require.main === module) {
