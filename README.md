@@ -1,6 +1,6 @@
 ## nosh: an experimental shell based on Node.js
 
-`nosh` is basically a normal Node.js REPL, except any function not already defined in the REPL context can be used to run an executable that's on your PATH:
+`nosh` is essentially a normal Node.js REPL, except any function not already defined in the REPL context can be used to run an executable from your PATH:
 
     > ls()
     README.md
@@ -24,6 +24,8 @@ You can chain other commands, in which case stdout of the process is piped to st
     > echo("hello world").cat()
     hello world
 
+(equivalent to `echo "hello world" | cat`)
+
 This works for any length pipeline, of course:
 
     > echo("hello world").cat().cat().cat().wc()
@@ -44,17 +46,21 @@ Non-zero exit codes will cause the promise to reject:
     > sh("-c", "false")
     Thrown: 1
 
+(this example uses `sh("-c", "false")` instead of `false` directly, because the latter is already defined in JavaScript)
+
 You can instead call `.code()` to not reject, but instead return a promise that resolves to the exit code:
 
     > sh("-c", "false").code()
     1
+
+(equivalent to `sh -c "false"; echo $?`)
 
 "Command substitution" works, so you can pass any command as an argument to another command:
 
     > echo(echo("hello world"))
     hello world
 
-(This is equivalent to `echo(await echo("hello world").string())`, or `echo $(echo "hello world")` in most shells)
+(equivalent to `echo(await echo("hello world").string())`, or `echo $(echo "hello world")` in most shells)
 
 "Process substition" also works, so you can pass the output of a command as a file to another command:
 
@@ -63,7 +69,7 @@ You can instead call `.code()` to not reject, but instead return a promise that 
     > echo(echo("hello").stdout)
     /dev/fd/3
 
-(This is equivalent to `cat <(echo "hello world")` in most shells)
+(equivalent to `cat <(echo "hello world")` in most shells)
 
 In fact, this works with any Stream, not just `stdout` of sub-processes:
 
@@ -77,7 +83,6 @@ In fact, this works with any Stream, not just `stdout` of sub-processes:
 - Support expressions other than statements
 - Inject the Proxy in the context using something besides `with() { }`?
 - Support various other helper methods on `Process`.
-- Alternative syntaxes (`sh\`echo hello\``)
-- Use as scripting language in addition to REPL?
-- History
+- Alternative syntaxes (`sh``echo hello```)
+- History (currently only works on Node 11)
 - Pick a name that's available in NPM
